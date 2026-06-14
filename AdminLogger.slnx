@@ -3,7 +3,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="AdminLogger.vcxproj" />
-  <Project Path="Client/Client.vcxproj" />
-  <Project Path="Server/Server.vcxproj" />
+  <Project Path="AdminLogger.vcxproj" Id="4566fe49-f5a2-4bb6-8770-fcb8e91eaeee" />
+  <Project Path="Client/Client.vcxproj" Id="fdedb2bc-4ab9-4039-866a-9f794c9d7bdc" />
+  <Project Path="Server/Server.vcxproj" Id="df9d3358-93ef-4025-becd-89a587d57a2c" />
 </Solution>
