@@ -5,8 +5,8 @@
 using namespace std;
 
 enum Role {
-    Admin,
-    User
+    ADMIN,
+    USER
 };
 
 enum Status {
@@ -23,19 +23,36 @@ class User {
 
     string toString();
 
-    void loadFromString(vector<string> data);
+    void loadFromString(string st);
 };
 
 string User::toString() {
-
+    return "";
 }
 
-void User::loadFromString(vector<string> data) {
+void User::loadFromString(string st) {
+    int first = st.find(';');
+    int second = st.find(';', first + 1);
+    int third = st.find(';', second + 1);
 
+    string _name = st.substr(0, first);
+    string _role = st.substr(first + 1, second - first - 1);
+    string _status = st.substr(second + 1, third - second - 1);
+
+    name = _name;
+
+    if (_role == "admin")
+        role = ADMIN;
+    else if (_role == "user")
+        role = USER;
+
+    if (_status == "active")
+        status = ACTIVE;
+    else if (_status == "inactive")
+        status = INACTIVE;
 }
-
 
 int main()
 {
-    std::cout << "Client sending info...\n";
+    
 }
