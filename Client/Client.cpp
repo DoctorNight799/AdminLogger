@@ -18,16 +18,32 @@ class User {
     string name;
     Role role;
     Status status;
-
+public:
     User(string _name, Role _role, Status _status) : name(_name), role(_role), status(_status) {}
-
+   
     string toString();
 
     void loadFromString(string st);
 };
 
 string User::toString() {
-    return "";
+    string s = "";
+    s += name;
+    s += ';';
+    string _role, _status;
+    if (role == ADMIN)
+        _role = "admin;";
+    else if (role == USER)
+        _role = "user;";
+    s += _role;
+
+    if (status == ACTIVE)
+        _status = "active;";
+    else if (status == INACTIVE)
+        _status = "inactive;";
+    s += _status;
+
+    return s;
 }
 
 void User::loadFromString(string st) {
@@ -54,5 +70,7 @@ void User::loadFromString(string st) {
 
 int main()
 {
-    
+    User user("ivan", ADMIN, ACTIVE);
+    string s = user.toString();
+    cout << s;
 }
