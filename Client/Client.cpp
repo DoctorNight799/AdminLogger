@@ -20,40 +20,55 @@ class User {
     Status status;
 public:
     User(string _name, Role _role, Status _status) : name(_name), role(_role), status(_status) {}
+    User(string data) {
+        loadFromString(data);
+    }
    
     string toString();
 
-    void loadFromString(string st);
+    void loadFromString(string data);
+};
+
+class UserStorage {
+    vector<User> users;
+
+public:
+    void saveUser(string fileName);
+    void loadUsers(string fileName);
+
+    void addUser(User user);
+    User* findUser(string name);
+    void removeUser(User* user);
 };
 
 string User::toString() {
-    string s = "";
-    s += name;
-    s += ';';
+    string user = "";
+    user += name;
+    user += ';';
     string _role, _status;
     if (role == ADMIN)
         _role = "admin;";
     else if (role == USER)
         _role = "user;";
-    s += _role;
+    user += _role;
 
     if (status == ACTIVE)
         _status = "active;";
     else if (status == INACTIVE)
         _status = "inactive;";
-    s += _status;
+    user += _status;
 
-    return s;
+    return user;
 }
 
-void User::loadFromString(string st) {
-    int first = st.find(';');
-    int second = st.find(';', first + 1);
-    int third = st.find(';', second + 1);
+void User::loadFromString(string data) {
+    int first = data.find(';');
+    int second = data.find(';', first + 1);
+    int third = data.find(';', second + 1);
 
-    string _name = st.substr(0, first);
-    string _role = st.substr(first + 1, second - first - 1);
-    string _status = st.substr(second + 1, third - second - 1);
+    string _name = data.substr(0, first);
+    string _role = data.substr(first + 1, second - first - 1);
+    string _status = data.substr(second + 1, third - second - 1);
 
     name = _name;
 
@@ -70,7 +85,5 @@ void User::loadFromString(string st) {
 
 int main()
 {
-    User user("ivan", ADMIN, ACTIVE);
-    string s = user.toString();
-    cout << s;
+    
 }
