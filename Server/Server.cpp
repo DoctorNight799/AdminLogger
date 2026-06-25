@@ -1,6 +1,11 @@
 ﻿#include <iostream>
+#include <string>
+
+using namespace std;
 
 int main()
 {
-    std::cout << "Server is listening...\n";
+    cout << "Server is listening...\n";
+    int a;
+    cin >> a;
 }
