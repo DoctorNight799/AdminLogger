@@ -1,3 +1,4 @@
 lexa;admin;active;
 ivan;user;inactive;
 sergey;admin;active;
+test;admin;active;

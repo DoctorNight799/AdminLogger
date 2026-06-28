@@ -5,6 +5,10 @@
 #include <vector>
 #include <fstream>
 #include <ctime>
+#pragma comment(lib, "ws2_32.lib")
+#include <WinSock2.h>
+
+#pragma warning(disable: 4996)
 
 using namespace std;
 
@@ -444,10 +448,23 @@ void adminMenu(UserStorage& storage, Session& session) {
     }
 }
 
+int sendAll(SOCKET socket, const char* data, int totalBytes) {
+    int bytesSent = 0;
+    while (bytesSent < totalBytes) {
+        int result = send(socket, data + bytesSent, totalBytes - bytesSent, 0);
+        if (result == SOCKET_ERROR) {
+            return -1;
+        }
+        bytesSent += result;
+    }
+    return bytesSent;
+}
+
 int main()
 {
     setlocale(LC_ALL, "Rus");
     UserStorage storage;
+    string filePath = "";
     try {
         storage.loadUsers("user.txt");
         while (true) {
@@ -462,6 +479,7 @@ int main()
                     LogEntry login(curr->getName(), LOGIN);
                     session.addLog(login);
                     adminMenu(storage, session);
+                    filePath = log;
                     break;
                 }
                 else {
@@ -474,7 +492,124 @@ int main()
                 continue;
             }
         }
-        cout << "Программа закончена\n";
+
+        cout << endl;
+
+        WSAData wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            cout << "Error\n";
+            exit(1);
+        }
+
+        SOCKADDR_IN addr;
+        int sizeAddr = sizeof(addr);
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+        addr.sin_port = htons(1111);
+        addr.sin_family = AF_INET;
+        
+        SOCKET clientSocket = socket(AF_INET, SOCK_STREAM, NULL);
+        if (clientSocket == INVALID_SOCKET) {
+            cout << "Ошибка создания сокета\n";
+            WSACleanup();
+            return 1;
+        }
+
+        if (connect(clientSocket, (SOCKADDR*)&addr, sizeAddr) == SOCKET_ERROR) {
+            cout << "Ошибка подключения. Код: " << WSAGetLastError() << endl;
+            closesocket(clientSocket);
+            WSACleanup();
+            return 1;
+        }
+        cout << "Connection succesful\n";
+
+
+        cout << "Файл для отправки: " << filePath << endl;
+
+        ifstream inputFile(filePath, ios::binary);
+        if (!inputFile) {
+            cout << "ОШИБКА: Файл " << filePath << " не найден!\n";
+            closesocket(clientSocket);
+            WSACleanup();
+            system("pause");
+            return 1;
+        }
+        cout << "Файл открыт\n";
+
+        // получение размера файла
+        inputFile.seekg(0, ios::end);     
+        int fileSize = (int)inputFile.tellg(); 
+        inputFile.seekg(0, ios::beg);
+        cout << "Размер файла: " << fileSize << " байт\n";
+
+        vector<char> fileData(fileSize);
+        inputFile.read(fileData.data(), fileSize);
+        inputFile.close();
+        cout << "Файл прочитан в память\n";
+
+        // [4 байта длина имени] [имя файла] [4 байта размер] [данные]
+
+        string fileName = filePath;
+        int fileNameLength = (int)fileName.length();
+
+        cout << "\nОтправка данных...\n";
+
+        if (sendAll(clientSocket, (char*)&fileNameLength, sizeof(int)) == -1) {
+            cout << "Ошибка отправки длины имени файла\n";
+            closesocket(clientSocket);
+            WSACleanup();
+            return 1;
+        }
+        cout << "Отправлена длина имени: " << fileNameLength << " байт" << endl;
+
+        if (sendAll(clientSocket, fileName.c_str(), fileNameLength) == -1) {
+            cout << "Ошибка отправки имени файла\n";
+            closesocket(clientSocket);
+            WSACleanup();
+            return 1;
+        }
+        cout << "Отправлено имя файла: " << fileName << endl;
+
+        if (sendAll(clientSocket, (char*)&fileSize, sizeof(int)) == -1) {
+            cout << "Ошибка отправки размера файла\n";
+            closesocket(clientSocket);
+            WSACleanup();
+            return 1;
+        }
+        cout << "Отправлен размер: " << fileSize << " байт" << endl;
+
+        int totalSent = 0;
+        while (totalSent < fileSize) {
+            int bytesToSend = fileSize - totalSent;
+            int result = send(clientSocket, fileData.data() + totalSent, bytesToSend, 0);
+            if (result == SOCKET_ERROR) {
+                cout << "Ошибка отправки данных. Код: " << WSAGetLastError() << endl;
+                closesocket(clientSocket);
+                WSACleanup();
+                return 1;
+            }
+            totalSent += result;
+
+            cout << "Прогресс: " << totalSent << "/" << fileSize << " байт ("
+                << (totalSent * 100 / fileSize) << "%)\r";
+        }
+        cout << "\nФайл отправлен!\n";
+
+        cout << "\nОжидание ответа от сервера...\n";
+        char responseBuffer[1024];
+        int bytesReceived = recv(clientSocket, responseBuffer, sizeof(responseBuffer) - 1, 0);
+        if (bytesReceived > 0) {
+            responseBuffer[bytesReceived] = '\0';
+            cout << "Ответ сервера: " << responseBuffer << endl;
+        }
+        else {
+            cout << "Ответ не получен\n";
+        }
+
+        cout << "\nЗакрываем соединение...\n";
+        closesocket(clientSocket);
+        WSACleanup();
+
+        system("pause");
     }
     catch (exception& e) {
         cerr << e.what();
