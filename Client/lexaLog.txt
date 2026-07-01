@@ -1,6 +1,2 @@
-Mon Jun 29 01:25:40 2026 | lexa | login
-Mon Jun 29 01:25:49 2026 | lexa | create | test
-Mon Jun 29 01:25:57 2026 | lexa | edit | test | Изменение статуса: Active -> Inactive
-Mon Jun 29 01:26:12 2026 | lexa | edit | test | Отмена редактирования.
-Mon Jun 29 01:26:13 2026 | lexa | print_all_users
-Mon Jun 29 01:26:14 2026 | lexa | logout
+Wed Jul  1 17:56:33 2026 | lexa | login
+Wed Jul  1 17:56:35 2026 | lexa | logout

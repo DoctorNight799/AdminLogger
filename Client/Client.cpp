@@ -5,28 +5,34 @@
 #include <vector>
 #include <fstream>
 #include <ctime>
+#include <algorithm>
+#include <cctype>
+#include <limits>
 #pragma comment(lib, "ws2_32.lib")
 #include <WinSock2.h>
+
+#undef max
 
 #pragma warning(disable: 4996)
 
 using namespace std;
+
+const unsigned char KEY = 0x55;
 
 enum Role {
     ADMIN,
     USER
 };
 
-enum Status {
-    ACTIVE,
-    INACTIVE
-};
-
 enum Action {
     LOGIN,
+    LOGIN_FAIL,
     CREATE,
+    CREATE_FAIL,
     EDIT,
+    EDIT_FAIL,
     REMOVE,
+    REMOVE_FAIL,
     PRINTALLUSERS,
     LOGOUT
 };
@@ -34,9 +40,9 @@ enum Action {
 class User {
     string name;
     Role role;
-    Status status;
+    string pass;
 public:
-    User(string _name, Role _role, Status _status) : name(_name), role(_role), status(_status) {}
+    User(string _name, Role _role, string _pass) : name(_name), role(_role), pass(_pass) {}
 
     User(string data) {
         loadFromString(data);
@@ -67,12 +73,12 @@ public:
         role = _role;
     }
 
-    Status getStatus() {
-        return status;
+    string getPass() {
+        return pass;
     }
 
-    void setStatus(Status _status) {
-        status = _status;
+    void setPass(string _pass) {
+        pass = _pass;
     }
 };
 
@@ -80,8 +86,17 @@ class UserStorage {
     vector<User> users;
 
 public:
+    int getAdminCount() {
+        int count = 0;
+        for (auto& u : users) {
+            if (u.getRole() == ADMIN) count++;
+        }
+        return count;
+    }
+
     void saveUsers(string filename);
     void loadUsers(string filename);
+    void XORfile(string& filename);
 
     void addUser(User user);
     User* findUser(string name);
@@ -103,6 +118,10 @@ public:
         time(&timestamp);
     }
 
+    LogEntry(string _actor, Action _action, string _details) : actor(_actor), action(_action), details(_details) {
+        time(&timestamp);
+    }
+
     LogEntry(string _actor, Action _action, string _target, string _details) : actor(_actor), action(_action), target(_target), details(_details) {
         time(&timestamp);
     }
@@ -115,7 +134,7 @@ class Session {
     string logFilename;
     vector<LogEntry> logs;
 public:
-    Session(User _user, string _logFilename) : user(_user), logFilename(_logFilename) {}
+    Session(User& _user, string _logFilename) : user(_user), logFilename(_logFilename) {}
 
     User getUser() {
         return user;
@@ -137,6 +156,13 @@ public:
     }
 };
 
+string toLower(string s) {
+    transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return tolower(c);
+        });
+    return s;
+}
+
 string LogEntry::toString() {
     string s = "";
     string time = ctime(&timestamp);
@@ -148,14 +174,26 @@ string LogEntry::toString() {
     case LOGIN:
         s += "login";
         break;
+    case LOGIN_FAIL:
+        s += "login_fail";
+        break;
     case CREATE:
         s += "create";
+        break;
+    case CREATE_FAIL:
+        s += "create_fail";
         break;
     case EDIT:
         s += "edit";
         break;
+    case EDIT_FAIL:
+        s += "edit_fail";
+        break;
     case REMOVE:
         s += "remove";
+        break;
+    case REMOVE_FAIL:
+        s += "remove_fail";
         break;
     case LOGOUT:
         s += "logout";
@@ -184,10 +222,13 @@ void UserStorage::saveUsers(string filename) {
         file << user.toString() << '\n';
     }
     file.close();
-    cout << "Пользователи сохранены в файл " << filename << endl;
+    XORfile(filename);
+    cout << "Пользователи сохранены и зашифрованы в файл " << filename << endl;
 }
 
 void UserStorage::loadUsers(string filename) {
+    XORfile(filename);
+
     users.clear();
     ifstream file(filename);
     if (!file.is_open()) {
@@ -200,15 +241,38 @@ void UserStorage::loadUsers(string filename) {
         users.push_back(user);
     }
     file.close();
+    XORfile(filename);
     cout << "Пользователи загружены из файла " << filename << endl;
 }
 
-void UserStorage::addUser(User user) {
-    for (auto& u : users) {
-        if (u == user) {
-            throw runtime_error("Такой пользователь уже есть\n");
-        }
+void UserStorage::XORfile(string& filename) {
+    ifstream in(filename);
+    if (!in.is_open()) {
+        throw runtime_error("Не удалось открыть файл: " + filename);
     }
+
+    string content;
+    string line;
+    while (getline(in, line)) {
+        if (!content.empty()) content += '\n';
+        content += line;
+    }
+    in.close();
+
+    // XOR для каждого символа
+    for (char& c : content) {
+        c ^= KEY;
+    }
+
+    ofstream out(filename);
+    if (!out.is_open()) {
+        throw runtime_error("Не удалось записать файл: " + filename);
+    }
+    out << content;
+    out.close();
+}
+
+void UserStorage::addUser(User user) {
     users.push_back(user);
     cout << "Добавлен пользователь " << user.getName() << endl;
     saveUsers("user.txt");
@@ -226,9 +290,9 @@ void UserStorage::removeUser(User* user) {
     if (!user) {
         throw runtime_error("Такого пользователя не существует\n");
     }
-        
+    string name = user->getName();
     users.erase(remove(users.begin(), users.end(), *user), users.end());
-    cout << "Пользователь " << user->getName() << " удален\n";
+    cout << "Пользователь " << name << " удален\n";
     saveUsers("user.txt");
 }
 
@@ -249,20 +313,15 @@ void UserStorage::printAllUsers() {
 
 string User::toString() {
     string user = "";
-    user += name;
-    user += ';';
-    string _role, _status;
+    user += name + ';';
+    string _role;
     if (role == ADMIN)
         _role = "admin;";
     else if (role == USER)
         _role = "user;";
     user += _role;
 
-    if (status == ACTIVE)
-        _status = "active;";
-    else if (status == INACTIVE)
-        _status = "inactive;";
-    user += _status;
+    user += pass + ';';
 
     return user;
 }
@@ -272,9 +331,12 @@ void User::loadFromString(string data) {
     int second = data.find(';', first + 1);
     int third = data.find(';', second + 1);
 
+    if (first == string::npos || second == string::npos || third == string::npos)
+        throw runtime_error("Некорректный формат строки пользователя");
+
     string _name = data.substr(0, first);
     string _role = data.substr(first + 1, second - first - 1);
-    string _status = data.substr(second + 1, third - second - 1);
+    string _pass = data.substr(second + 1, third - second - 1);
 
     name = _name;
 
@@ -283,10 +345,7 @@ void User::loadFromString(string data) {
     else if (_role == "user")
         role = USER;
 
-    if (_status == "active")
-        status = ACTIVE;
-    else if (_status == "inactive")
-        status = INACTIVE;
+    pass = _pass;
 }
 
 void adminMenu(UserStorage& storage, Session& session) {
@@ -295,9 +354,13 @@ void adminMenu(UserStorage& storage, Session& session) {
     while (true) {
         if (actions % 2 == 0)
             session.saveLogfile();
-        cout << "Меню администратора:\n1.Добавить пользователя\n2.Изменить пользователя\n3.Удалить пользователя\n4.Показать всех пользователей\n5.Выход\nВыберите действие: ";
+        cout << "\nМеню администратора:\n1.Добавить пользователя\n2.Изменить пользователя\n3.Удалить пользователя\n4.Показать всех пользователей\n5.Выход\nВыберите действие: ";
         int ch;
         cin >> ch;
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        }
         cin.ignore();
         switch (ch) {
         case 1: {
@@ -305,11 +368,48 @@ void adminMenu(UserStorage& storage, Session& session) {
             cout << "Введите имя нового пользователя (оно должно быть уникальным): ";
             string name;
             getline(cin, name);
+            name = toLower(name);
+            if (!storage.checkName(name)) {
+                cout << "Пользователь с таким именем уже есть\n";
+                LogEntry add(admin.getName(), CREATE_FAIL, "Такой пользователь уже существует: " + name);
+                session.addLog(add);
+                actions++;
+                break;
+            }
             user += name + ';';
+
             cout << "Введите роль нового пользователя (user\\admin): ";
             string role;
             getline(cin, role);
-            user += role + ";active;";
+            role = toLower(role);
+            if (role != "admin" && role != "user") {
+                cout << "Неправильная роль\n";
+                LogEntry add(admin.getName(), CREATE_FAIL, "Неправильная роль: " + role);
+                session.addLog(add);
+                actions++;
+                break;
+            }
+            user += role + ';';
+            
+            string pass;
+            cout << "Введите пароль нового пользователя: ";
+            getline(cin, pass);
+            if (pass.empty()) {
+                cout << "Пароль не может быть пустым\n";
+                LogEntry add(admin.getName(), CREATE_FAIL, "Неправильный пароль: пароль пустой");
+                session.addLog(add);
+                actions++;
+                break;
+            }
+            else if (pass.size() < 5) {
+                cout << "Пароль не может быть меньше 5 символов\n";
+                LogEntry add(admin.getName(), CREATE_FAIL, "Неправильный пароль: пароль меньше 5 символов");
+                session.addLog(add);
+                actions++;
+                break;
+            }
+            user += pass + ';';
+
             User target(user);
             storage.addUser(target);
             LogEntry add(admin.getName(), CREATE, target.getName(), "");
@@ -321,94 +421,123 @@ void adminMenu(UserStorage& storage, Session& session) {
             cout << "Введите имя пользователя для редактирования: ";
             string name;
             getline(cin, name);
+            name = toLower(name);
             User* target = storage.findUser(name);
             if (!target) {
                 cout << "Пользователь не найден\n";
+                LogEntry edit(admin.getName(), EDIT_FAIL, name, "Пользователь не найден");
+                session.addLog(edit);
+                actions++;
+                break;
+            }
+            if (target->getName() == session.getUser().getName()) {
+                cout << "Нельзя изменять самого себя\n";
+                LogEntry edit(admin.getName(), EDIT_FAIL, target->getName(), "Попытка изменить самого себя");
+                session.addLog(edit);
+                actions++;
                 break;
             }
             int ch;
             string details = "";
-            cout << "Иеню действий:\n1.Изменить имя пользователя\n2.Изменить роль пользователя\n3.Изменить статус пользователя\n4.Выйти в прошлое меню\nВыберите действие: ";
+            Action action = EDIT;
+            cout << "Меню действий:\n1.Изменить имя пользователя\n2.Изменить роль пользователя\n3.Изменить пароль пользователя\n4.Выйти в прошлое меню\nВыберите действие: ";
             cin >> ch;
+            if (cin.fail()) {
+                cin.clear();
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            }
             cin.ignore();
             switch (ch) {
             case 1: {
                 string newName;
                 cout << "Введите новое имя пользователя: ";
                 getline(cin, newName);
-                if (storage.checkName(name)) {
+                if (newName.empty()) {
+                    cout << "Имя не должно быть пустым\n";
+                    action = EDIT_FAIL;
+                    details += "Неудачное изменение имени: пустое имя";
+                    break;
+                }
+                newName = toLower(newName);
+                if (storage.checkName(newName)) {
                     details += "Изменение имени: " + target->getName() + " -> " + newName;
                     target->setName(newName);
                     break;
                 }
                 else {
                     cout << "Неудача, пользователь с таким именем уже есть\n";
-                    details += "Неудачное Изменение имени: " + target->getName() + " -> " + newName + ". Пользователь с таким именем уже есть.";
+                    action = EDIT_FAIL;
+                    details += "Неудачное мзменение имени: " + target->getName() + " -> " + newName + ". Пользователь с таким именем уже есть.";
                     break;
                 }
             }
             case 2: {
                 Role role = target->getRole();
-                string tarRole;
-                if (role == ADMIN)
-                    tarRole = "Admin";
-                else if (role == USER)
-                    tarRole = "User";
                 int chRole;
                 cout << "1.Админ\n2.Пользователь\nВыберите: ";
                 cin >> chRole;
-                if (chRole == 1 && tarRole != "Admin") {
-                    details += "Изменение роли: " + tarRole + " -> Admin";
+                if (cin.fail()) {
+                    cin.clear();
+                    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                    cout << "Неудача, некорректная роль\n";
+                    action = EDIT_FAIL;
+                    details += "Неудачное изменение роли: некорректный выбор.";
+                    break;
+                }
+                if (chRole == 1 && role == USER) {
+                    details += "Изменение роли: User -> Admin";
                     target->setRole(ADMIN);
                     break;
                 }
-                else if(chRole == 2 && tarRole != "User") {
-                    details += "Изменение роли: " + tarRole + " -> User";
+                else if(chRole == 2 && role == ADMIN) {
+                    if (storage.getAdminCount() <= 1) {
+                        cout << "Нельзя понизить последнего администратора!\n";
+                        action = EDIT_FAIL;
+                        details += "Попытка понизить последнего админа";
+                        break;
+                    }
+                    details += "Изменение роли: Admin -> User";
                     target->setRole(USER);
                     break;
                 }
                 else {
-                    cout << "Неудача, некорректная роль\n";
+                    cout << "Эта роль уже присвоена пользователю\n";
+                    action = EDIT_FAIL;
                     details += "Неудачное изменение роли: пользователю уже присвоена эта роль.";
                     break;
                 }
             }
             case 3: {
-                Status status = target->getStatus();
-                string tarStatus;
-                if (status == ACTIVE)
-                    tarStatus = "Active";
-                else if (status == INACTIVE)
-                    tarStatus = "Inactive";
-                int chRole;
-                cout << "1.Активный\n2.Неактивный\nВыберите: ";
-                cin >> chRole;
-                if (chRole == 1 && tarStatus != "Active") {
-                    details += "Изменение статуса: " + tarStatus + " -> Active";
-                    target->setStatus(ACTIVE);
+                string pass;
+                cout << "Введите новый пароль: ";
+                getline(cin, pass);
+                if (pass.empty()) {
+                    cout << "Пароль не может быть пустым\n";
+                    action = EDIT_FAIL;
+                    details += "Неудачное изменение пароля: пароль пустой";
                     break;
                 }
-                else if (chRole == 2 && tarStatus != "Inactive") {
-                    details += "Изменение статуса: " + tarStatus + " -> Inactive";
-                    target->setStatus(INACTIVE);
+                else if (pass.size() < 5) {
+                    cout << "Пароль не может быть меньше 5 символов\n";
+                    action = EDIT_FAIL;
+                    details += "Неудачное изменение пароля: пароль меньше 5 символов";
                     break;
                 }
-                else {
-                    cout << "Неудача, некорректный статус\n";
-                    details += "Неудачное изменение статуса: пользователю уже присвоен этот статус.";
-                    break;
-                }
+                details += "Изменение пароля: новый пароль успешно добавлен";
+                target->setPass(pass);
+                break;
             }
             case 4: {
                 details += "Отмена редактирования.";
                 break;
             }
             default:
+                action = EDIT_FAIL;
                 details += "Выбраное неправильнон действие.";
                 cout << "Неправильное действие\n";
                 break;
             }
-            LogEntry edit(admin.getName(), EDIT, target->getName(), details);
+            LogEntry edit(admin.getName(), action, target->getName(), details);
             session.addLog(edit);
             actions++;
             break;
@@ -417,13 +546,31 @@ void adminMenu(UserStorage& storage, Session& session) {
             cout << "Введите имя пользователя для удаления: ";
             string name;
             getline(cin, name);
+            name = toLower(name);
+            if (name == session.getUser().getName()) {
+                cout << "Нельзя удалить самого себя\n";
+                LogEntry remove(admin.getName(), REMOVE_FAIL, name, "Попытка удалить самого себя");
+                session.addLog(remove);
+                actions++;
+                break;
+            }
             User* target = storage.findUser(name);
             if (!target) {
                 cout << "Пользователь не найден\n";
+                LogEntry remove(admin.getName(), REMOVE_FAIL, name, "Пользователь не найден");
+                session.addLog(remove);
+                actions++;
                 break;
             }
-            LogEntry remove(admin.getName(), REMOVE, target->getName(), "");
+            if (target->getRole() == ADMIN && storage.getAdminCount() <= 1) {
+                cout << "Нельзя удалить последнего администратора!\n";
+                LogEntry remove(admin.getName(), REMOVE_FAIL, name, "Попытка удалить последнего админа");
+                session.addLog(remove);
+                actions++;
+                break;
+            }
             storage.removeUser(target);
+            LogEntry remove(admin.getName(), REMOVE, name, "");
             session.addLog(remove);
             actions++;
             break;
@@ -455,6 +602,7 @@ int sendAll(SOCKET socket, const char* data, int totalBytes) {
         if (result == SOCKET_ERROR) {
             return -1;
         }
+        if (result <= 0) return -1;
         bytesSent += result;
     }
     return bytesSent;
@@ -471,24 +619,37 @@ int main()
             cout << "Введите имя админа: ";
             string name;
             getline(cin, name);
+            name = toLower(name);
             User* curr = storage.findUser(name);
             if (curr) {
-                if (curr->getRole() == ADMIN) {
-                    string log = curr->getName() + "Log.txt";
-                    Session session(*curr, log);
-                    LogEntry login(curr->getName(), LOGIN);
-                    session.addLog(login);
-                    adminMenu(storage, session);
-                    filePath = log;
-                    break;
+                cout << "Введите пароль: ";
+                string pass;
+                getline(cin, pass);
+                if (pass == curr->getPass()) {
+                    if (curr->getRole() == ADMIN) {
+                        string log = curr->getName() + "Log.txt";
+                        Session session(*curr, log);
+                        LogEntry login(curr->getName(), LOGIN);
+                        session.addLog(login);
+                        adminMenu(storage, session);
+                        filePath = log;
+                        break;
+                    }
+                    else {
+                        cout << "Этот пользователь не является администратором\n" << endl;
+                        name = "";
+                        continue;
+                    }
                 }
                 else {
-                    cout << "Этот пользователь не является администратором\n" << endl;
+                    cout << "Неправльный пароль пользователя\n" << endl;
+                    name = "";
                     continue;
                 }
             }
             else {
                 cout << "Такой пользователь не найден\n" << endl;
+                name = "";
                 continue;
             }
         }
@@ -506,7 +667,7 @@ int main()
         addr.sin_addr.s_addr = inet_addr("127.0.0.1");
         addr.sin_port = htons(1111);
         addr.sin_family = AF_INET;
-        
+
         SOCKET clientSocket = socket(AF_INET, SOCK_STREAM, NULL);
         if (clientSocket == INVALID_SOCKET) {
             cout << "Ошибка создания сокета\n";
@@ -536,8 +697,8 @@ int main()
         cout << "Файл открыт\n";
 
         // получение размера файла
-        inputFile.seekg(0, ios::end);     
-        int fileSize = (int)inputFile.tellg(); 
+        inputFile.seekg(0, ios::end);
+        int fileSize = (int)inputFile.tellg();
         inputFile.seekg(0, ios::beg);
         cout << "Размер файла: " << fileSize << " байт\n";
 
