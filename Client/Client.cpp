@@ -26,7 +26,6 @@ enum Role {
 
 enum Action {
     LOGIN,
-    LOGIN_FAIL,
     CREATE,
     CREATE_FAIL,
     EDIT,
@@ -259,7 +258,6 @@ void UserStorage::XORfile(string& filename) {
     }
     in.close();
 
-    // XOR для каждого символа
     for (char& c : content) {
         c ^= KEY;
     }
@@ -696,7 +694,6 @@ int main()
         }
         cout << "Файл открыт\n";
 
-        // получение размера файла
         inputFile.seekg(0, ios::end);
         int fileSize = (int)inputFile.tellg();
         inputFile.seekg(0, ios::beg);
@@ -706,8 +703,6 @@ int main()
         inputFile.read(fileData.data(), fileSize);
         inputFile.close();
         cout << "Файл прочитан в память\n";
-
-        // [4 байта длина имени] [имя файла] [4 байта размер] [данные]
 
         string fileName = filePath;
         int fileNameLength = (int)fileName.length();

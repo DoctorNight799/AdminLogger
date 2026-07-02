@@ -70,7 +70,7 @@ int main()
     }
     cout << "Длина имени файла: " << fileNameLength << " байт" << endl;
 
-    vector<char> fileName(fileNameLength + 1, 0); // +1 для '\0'
+    vector<char> fileName(fileNameLength + 1, 0); 
     if (recvAll(newConn, fileName.data(), fileNameLength) == -1) {
         cout << "Ошибка: не удалось получить имя файла\n";
         closesocket(newConn);
