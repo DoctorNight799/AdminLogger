@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
+#include <conio.h>
 #pragma comment(lib, "ws2_32.lib")
 #include <WinSock2.h>
 
@@ -172,9 +173,6 @@ string LogEntry::toString() {
     switch (action) {
     case LOGIN:
         s += "login";
-        break;
-    case LOGIN_FAIL:
-        s += "login_fail";
         break;
     case CREATE:
         s += "create";
@@ -621,8 +619,26 @@ int main()
             User* curr = storage.findUser(name);
             if (curr) {
                 cout << "Введите пароль: ";
-                string pass;
-                getline(cin, pass);
+                string pass = "";
+                char c;
+                while ((c = _getch()) != '\r') {
+                    if (c == '\b') {
+                        if (!pass.empty()) {
+                            pass.pop_back();
+
+                            _putch('\b');
+                            _putch(' ');
+                            _putch('\b');
+                        }
+                    }
+                    else if (c == '\t' || c == '\n')
+                        continue;
+                    else {
+                        pass += c;
+                        _putch('*');
+                    }
+                }
+                _putch('\n');
                 if (pass == curr->getPass()) {
                     if (curr->getRole() == ADMIN) {
                         string log = curr->getName() + "Log.txt";
